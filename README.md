@@ -1,2 +1,24 @@
 # charm_spectre_tests
-tests for charm++ that illustrate failures encountered when developing spectre
+Tests for charm++ that illustrate failures encountered when developing spectre
+
+To reproduce the issue:
+```
+git clone https://github.com/UIUC-PPL/charm.git
+
+./build LIBS multicore-linux-x86_64 --build-shared --enable-randomized-msgq --enable-error-checking --enable-tracing --enable-tracing-commthread --enable-charmdebug -g -O0
+
+cd tests/charm++/
+
+git clone https://github.com/kidder/charm_spectre_tests.git
+
+cd charm_spectre_tests/TEST_NAME
+
+make test
+```
+
+where TEST_NAME is one of the following:
+
+dynamic_array_expansion:
+  test will fail on develop, but pass for version 7.0.0.  Appears to be broken
+  by PR #3614
+
