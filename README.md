@@ -5,7 +5,7 @@ To reproduce the issue:
 ```
 git clone https://github.com/UIUC-PPL/charm.git
 
-./build LIBS multicore-linux-x86_64 --build-shared --enable-randomized-msgq --enable-error-checking --enable-tracing --enable-tracing-commthread --enable-charmdebug -g -O0
+./build LIBS multicore-linux-x86_64 --build-shared -g -O0
 
 cd tests/charm++/
 
