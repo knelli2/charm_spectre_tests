@@ -22,3 +22,7 @@ dynamic_array_expansion:
   test will fail on develop, but pass for version 7.0.0.  Appears to be broken
   by PR #3614
 
+dynamic_array_hang:
+  test will hang on version 7.0.0.  On develop test fails because of
+  dynamic_array_expansion failure prior to the point where v7.0.0 hangs
+
