@@ -1,0 +1,40 @@
+// Distributed under the MIT License.
+// See LICENSE.txt for details.
+
+mainmodule random_amr {
+
+  readonly CProxy_Main mainProxy;
+  readonly CProxy_DgElement dgElementProxy;
+  
+  mainchare Main {
+    entry Main(CkArgMsg* msg);
+    entry void initialize();
+    entry void check_neighbors();
+    entry void check_domain();
+    entry void evaluate_amr_criteria();
+    entry void adjust_domain();
+    entry void exit();
+    entry [reductiontarget] void check_volume(const double volume);
+  };
+
+  array [1D] DgElement {
+    entry DgElement();
+    entry DgElement(std::deque<ElementId_t> other_ids_to_create,
+                    const ElementId_t& parent_id);
+    entry DgElement(const ElementId_t& first_child_id,
+                    const std::deque<ElementId_t>& sibling_ids_to_collect);
+    entry void adjust_domain();
+    entry void collect_data_from_children(
+        std::deque<ElementId_t> sibling_ids_to_collect,
+        std::array<ElementId_t, 2>& parent_neighbors);
+    entry void ping(const ElementId_t& pinger, const size_t index);	
+    entry void evaluate_refinement_criteria();
+    entry void initialize_child(const ElementId_t& nonsibling_neighbor_id);
+    entry void initialize_parent(std::array<ElementId_t, 2>& parent_neighbors);
+    entry void ping_neighbors();
+    entry void send_data_to_children();
+    entry void send_volume();
+    entry void update_amr_decision(const ElementId_t& neighbor_id,
+                                   const Flag_t& neighbor_flag);
+  };
+};
