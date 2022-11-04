@@ -121,7 +121,7 @@ void Main::check_domain() {
   
   if (iteration > number_of_iterations) {
     if(possible_hangs.size() > 1) {
-      CkAbort("\n\n\n\nPossible hang didn't hang!\n\n\n\n\n\n");
+      CkPrintf("\n\n\n\nPossible hang didn't hang!\n\n\n\n\n\n");
     }
     CkStartQD(CkCallback(CkIndex_Main::exit(), mainProxy));
   } else {

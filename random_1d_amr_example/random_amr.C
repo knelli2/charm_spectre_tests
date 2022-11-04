@@ -87,11 +87,11 @@
 /*readonly*/ CProxy_DgElement dgElementProxy;
 
 namespace {
-static constexpr int initial_refinement_level = 3;
+static constexpr int initial_refinement_level = 0;
 
-static constexpr int number_of_iterations = 10000;
-static constexpr int maximum_refinement_level = 8;
-static const double do_something_fraction = 0.6;
+static constexpr int number_of_iterations = 10;
+static constexpr int maximum_refinement_level = 1;
+static const double do_something_fraction = 1.0;
 
 static constexpr bool output_iteration = true;
 static constexpr bool output_phase = false;
@@ -102,9 +102,13 @@ constexpr int two_to_the(int n) { return 1 << n; }
 
 constexpr int initial_number_of_elements = two_to_the(initial_refinement_level);
 
-int refinement_level(const ElementId_t id) { return std::floor(std::log2(id)); }
+int refinement_level(const ElementId_t id) {
+  CkAssert(id > 0);
+  return std::floor(std::log2(id));
+}
 
 int index(const ElementId_t id) {
+  CkAssert(id > 0);
   return id % two_to_the(refinement_level(id));
 }
 
@@ -229,14 +233,6 @@ void print_action(const std::string& action, const ElementId_t id) {
 Main::Main(CkArgMsg* msg) {
   delete msg;
   dgElementProxy = CProxy_DgElement::ckNew();
-  dgElementProxy.doneInserting();
-  CkStartQD(CkCallback(CkIndex_Main::initialize(), mainProxy));
-}
-
-// Creates the 2^L elements on the initial_refinement_level distributed
-// round-robin among the PEs
-void Main::initialize() {
-  print_phase("initialize");
   const int number_of_procs = CkNumPes();
   int which_proc = 0;
   std::vector<ElementId_t> element_ids(initial_number_of_elements);
@@ -245,6 +241,15 @@ void Main::initialize() {
     dgElementProxy(element_ids[j]).insert(which_proc);
     which_proc = (which_proc + 1 == number_of_procs ? 0 : which_proc + 1);
   }
+  dgElementProxy.doneInserting();
+  CkStartQD(CkCallback(CkIndex_Main::initialize(), mainProxy));
+}
+
+// Creates the 2^L elements on the initial_refinement_level distributed
+// round-robin among the PEs
+void Main::initialize() {
+  print_phase("initialize");
+  dgElementProxy.initialize_initial_elements();
   CkStartQD(CkCallback(CkIndex_Main::check_neighbors(), mainProxy));
 }
 
@@ -277,13 +282,39 @@ void Main::evaluate_amr_criteria() {
   print_iteration(iteration);
   print_phase("evaluate refinement criteria");
   dgElementProxy.evaluate_refinement_criteria();
+  CkStartQD(CkCallback(CkIndex_Main::begin_inserting(), mainProxy));
+}
+
+void Main::begin_inserting() {
+  print_phase("begin inserting");
+  dgElementProxy.beginInserting();
+  CkStartQD(CkCallback(CkIndex_Main::create_new_elements(), mainProxy));
+}
+
+// Creates new elements for elements that are split or joined
+void Main::create_new_elements() {
+  print_phase("create new elements");
+  dgElementProxy.create_new_elements();
+  CkStartQD(CkCallback(CkIndex_Main::done_inserting(), mainProxy));
+}
+
+void Main::done_inserting() {
+  print_phase("done inserting");
+  dgElementProxy.doneInserting();
   CkStartQD(CkCallback(CkIndex_Main::adjust_domain(), mainProxy));
 }
 
-// Requests every element to split, join, or update who are their neighbors
+// Initialize new elements and update the neighbors of unrefined elements
 void Main::adjust_domain() {
   print_phase("adjust domain");
   dgElementProxy.adjust_domain();
+  CkStartQD(CkCallback(CkIndex_Main::delete_old_elements(), mainProxy));
+}
+
+// Creates new elements for elements that are split or joined
+void Main::delete_old_elements() {
+  print_phase("delete old elements");
+  dgElementProxy.delete_old_elements();
   CkStartQD(CkCallback(CkIndex_Main::check_neighbors(), mainProxy));
 }
 
@@ -306,64 +337,32 @@ void Main::check_volume(const double volume) {
 // same refinement level
 DgElement::DgElement() {
   print_action("created", thisIndex);
-  const int L = refinement_level(thisIndex);
-  const int I = index(thisIndex);
-  const int Imax = two_to_the(L) - 1;
-  // The interval is considered to be periodic so that the element on the
-  // lower boundary of the interval is a neighbor of the element on the
-  // upper boundary of the interval
-  neighbors_[0] = (I == 0 ? id(L, Imax) : thisIndex - 1);
-  neighbors_[1] = (I == Imax ? id(L, 0) : thisIndex + 1);
-}
-
-// Constructor for a child element.  Children are created sequentially.
-//
-// other_ids_to_create is the list of further children to create
-// parent_id is the element that is splitting
-DgElement::DgElement(std::deque<ElementId_t> other_ids_to_create,
-                     const ElementId_t& parent_id) {
-  print_action("created child", thisIndex);
-  if (not other_ids_to_create.empty()) {
-    const auto child_id = other_ids_to_create.front();
-    other_ids_to_create.pop_front();
-    // create the next child
-    thisProxy(child_id).insert(other_ids_to_create, parent_id);
-  } else {
-    // all children are created, tell their parent to send its data to
-    // all the children
-    thisProxy[parent_id].send_data_to_children();
-  }
-}
-
-// Constructor for a parent element.  This is called by the lower child.
-//
-// first_child_id is the id of the child that created the parent element.
-// sibling_ids_to_collect is the list of further children to collect data from
-DgElement::DgElement(const ElementId_t& first_child_id,
-                     const std::deque<ElementId_t>& sibling_ids_to_collect) {
-  print_action("created parent", thisIndex);
-  // The {{0, 0}} represents that the neighbors of the parent are unknown
-  // (and will be set by collect_data_from_children)
-  thisProxy[first_child_id].collect_data_from_children(sibling_ids_to_collect,
-                                                       {{0, 0}});
 }
 
 // Adjusts the domain based on the final AMR decisions of each element
 void DgElement::adjust_domain() {
-  if (flag_ == 1) {
-    // Element wants to split, create the lower child
-    print_action("adjusting domain (split)", thisIndex);
-    thisProxy[2 * thisIndex].insert({2 * thisIndex + 1}, thisIndex);
+  if (flag_ == -2) {
+    // this is a newly created element, do nothing
+  } else if (flag_ == 1) {
+    send_data_to_children();
   } else if (flag_ == -1) {
     // Element wants to join, if it is the lower child, create the parent
     print_action("adjusting domain (join)", thisIndex);
     if (thisIndex % 2 == 0) {
-      thisProxy[thisIndex / 2].insert(thisIndex, {thisIndex + 1});
+      collect_data_from_children({thisIndex + 1}, {{0, 0}});
     }
   } else {
     // Element is neither splitting nor joining.  Update the ids of its
     // neighbors and reset/clear the AMR flags
     print_action("adjusting domain (do nothing)", thisIndex);
+    if(neighbor_flags_.count(neighbors_[0]) == 0 or
+       neighbor_flags_.count(neighbors_[1]) == 0) {
+      CkPrintf("On Element %i, lower neighbor = %i, upper neighbor = %i \n"
+	       "Neighbor flags = ", thisIndex, neighbors_[0], neighbors_[1]);
+      for (const auto& neighbor_flag : neighbor_flags_) {
+	CkPrintf("(%i, %i) ", neighbor_flag.first, neighbor_flag.second);
+      }
+    }
     neighbors_[0] =
         new_lower_neighbor_id(neighbors_[0], neighbor_flags_.at(neighbors_[0]));
     neighbors_[1] =
@@ -396,9 +395,30 @@ void DgElement::collect_data_from_children(
     thisProxy[next_child_id].collect_data_from_children(sibling_ids_to_collect,
                                                         parent_neighbors);
   }
+}
 
-  print_action("deleting (child)", thisIndex);
-  thisProxy[thisIndex].ckDestroy();
+void DgElement::create_new_elements() {
+  if (flag_ == 1) {
+    // Element wants to split, create the lower child
+    print_action("adjusting domain (split)", thisIndex);
+    thisProxy[2 * thisIndex].insert();
+    thisProxy[2 * thisIndex + 1].insert();
+  } else if (flag_ == -1) {
+    // Element wants to join, if it is the lower child, create the parent
+    print_action("adjusting domain (join)", thisIndex);
+    if (thisIndex % 2 == 0) {
+      thisProxy[thisIndex / 2].insert();
+    }
+  } else {
+    // Element is neither splitting nor joining.
+  }
+}
+
+void DgElement::delete_old_elements() {
+  if (flag_ == 1 or flag_ == -1) {
+    print_action("deleting", thisIndex);
+    thisProxy[thisIndex].ckDestroy();
+  }
 }
 
 // Evaluate the AMR criteria (for this example, randomly choose whether to
@@ -437,6 +457,18 @@ void DgElement::initialize_child(const ElementId_t& nonsibling_neighbor_id) {
   }
 }
 
+// Initialize the initial elements
+void DgElement::initialize_initial_elements() {
+  const int L = refinement_level(thisIndex);
+  const int I = index(thisIndex);
+  const int Imax = two_to_the(L) - 1;
+  // The interval is considered to be periodic so that the element on the
+  // lower boundary of the interval is a neighbor of the element on the
+  // upper boundary of the interval
+  neighbors_[0] = (I == 0 ? id(L, Imax) : thisIndex - 1);
+  neighbors_[1] = (I == Imax ? id(L, 0) : thisIndex + 1);
+}
+
 // Initialize the data held by a newly created parent element.
 void DgElement::initialize_parent(
     const std::array<ElementId_t, 2>& parent_neighbors) {
@@ -450,6 +482,10 @@ void DgElement::initialize_parent(
 // index is 0 for the lower neighbor, 1 for the upper neighbor
 void DgElement::ping(const ElementId_t& pinger, const size_t index) {
   print_action("pinged", thisIndex);
+  if (neighbors_[index] != pinger) {
+    CkPrintf("On Element %i, Neighbors %zu = %i, pinger = %i\n", thisIndex,
+	     index, neighbors_[index], pinger);
+  }
   CkAssert(neighbors_[index] == pinger);
   // Set pings_received to 2 if this is the second ping, to index if this
   // is the first ping. A value of -1 indicates no previous pings.
@@ -466,6 +502,7 @@ void DgElement::ping(const ElementId_t& pinger, const size_t index) {
 // lower (0) or upper (1) neighbor of that neighbor
 void DgElement::ping_neighbors() {
   print_data("pinging neighbors");
+  CkAssert(neighbors_[0] > 0 and neighbors_[1] > 0);
   thisProxy[neighbors_[0]].ping(thisIndex, 1);
   thisProxy[neighbors_[1]].ping(thisIndex, 0);
 }
@@ -480,9 +517,6 @@ void DgElement::send_data_to_children() {
   // Send data to upper child
   thisProxy[2 * thisIndex + 1].initialize_child(
       new_upper_neighbor_id(neighbors_[1], neighbor_flags_.at(neighbors_[1])));
-
-  print_action("deleting (parent)", thisIndex);
-  thisProxy[thisIndex].ckDestroy();
 }
 
 // Contribute the volume of the element to a reduction.  Also check that

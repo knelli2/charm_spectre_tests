@@ -24,7 +24,11 @@ class Main : public CBase_Main {
   void check_neighbors();
   void check_domain();
   void evaluate_amr_criteria();
+  void begin_inserting();
+  void create_new_elements();
+  void done_inserting();
   void adjust_domain();
+  void delete_old_elements();
   void exit();
   void check_volume(const double volume);
 };
@@ -32,16 +36,15 @@ class Main : public CBase_Main {
 class DgElement : public CBase_DgElement {
  public:
   DgElement();
-  DgElement(std::deque<ElementId_t> other_ids_to_create,
-            const ElementId_t& parent_id);
-  DgElement(const ElementId_t& first_child_id,
-            const std::deque<ElementId_t>& sibling_ids_to_collect);
   void adjust_domain();
   void collect_data_from_children(
       std::deque<ElementId_t> sibling_ids_to_collect,
       std::array<ElementId_t, 2> parent_neighbors);
+  void create_new_elements();
+  void delete_old_elements();
   void evaluate_refinement_criteria();
   void initialize_child(const ElementId_t& nonsibling_neighbor_id);
+  void initialize_initial_elements();
   void initialize_parent(const std::array<ElementId_t, 2>& parent_neighbors);
   void ping(const ElementId_t& pinger, const size_t index);
   void ping_neighbors();
