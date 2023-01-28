@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# Charm generated files
+*.decl.h
+*.def.h
+
+# Charmrun
+charmrun
+
+# VSCode
+.vscode/
