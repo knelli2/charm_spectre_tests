@@ -1,0 +1,26 @@
+// Distributed under the MIT License.
+// See LICENSE.txt for details.
+
+mainmodule pure_charm_messages {
+
+  readonly CProxy_Main mainProxy;
+  readonly CProxy_DgElement dgElementProxy;
+
+  message NonOwningMessage;
+
+  mainchare Main {
+    entry Main(CkArgMsg* msg);
+    entry void start_send_expected_address();
+    entry void start_send_messages();
+    entry void start_check_messages();
+    entry void exit();
+  };
+
+  array [1D] DgElement {
+    entry DgElement(int element);
+    entry void send_expected_address();
+    entry void receive_expected_address(const std::string);
+    entry void send_message();
+    entry void receive_message(NonOwningMessage*);
+  };
+};
